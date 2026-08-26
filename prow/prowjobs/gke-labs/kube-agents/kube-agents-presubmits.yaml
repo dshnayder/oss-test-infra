@@ -27,24 +27,44 @@ presubmits:
       # What moved is the expected run, not the policy: the job used to make
       # two devops-bench invocations and now makes nine.
       #
-      #   two active tasks x one run each  ->  ~43min   (85m, ~2.0x)
-      #   three active tasks x three reps  ->  ~78min   (150m, ~1.9x)
+      #   two active tasks x one run each  ->  ~43min   (85m,  ~2.0x)
+      #   three active tasks x three reps  -> ~128min   (240m, ~1.9x)
       #
       # Two changes get it there. gke-labs/kube-agents#939 activated a third
       # case (cluster-agent-crashloop-debug), and #925 runs each case
       # EVAL_REPETITIONS times, default 3, because the gate it lands grades a
       # pass RATE per case rather than a single pass -- one flaky run no
       # longer reds the job, but three runs are what a rate is computed from.
-      # Only the ~5min per task-repetition scales with that; the ~33min of
-      # Boskos lease, image build and deploy is paid once either way.
       #
-      # 78min is an ESTIMATE and wants replacing with a measurement from the
-      # first runs at three repetitions. It is also probably pessimistic:
-      # gke-labs/kube-agents#951 stopped gpu-stress-test-diagnosis creating
-      # its own cluster per invocation, and cluster creation was the bulk of
-      # what a repetition of that task cost. Lower this again once the runs
-      # say what the number really is.
-      timeout: 150m
+      # 128min is MEASURED, not extrapolated from a guess. Job
+      # 2092688725648609280 on gke-labs/kube-agents#925 ran all three cases at
+      # one repetition on 2026-08-26 and took 52.2min wall
+      # (started.json -> finished.json):
+      #
+      #   Boskos lease + image build + deploy      14.4min   paid once
+      #   gpu-stress-test-diagnosis                21.1min   (agent 1102s)
+      #   agent-kanban-smoke                       14.1min   (agent  800s)
+      #   cluster-agent-crashloop-debug             2.5min   (agent   89s)
+      #
+      # Only the per-invocation 37.8min scales, so three repetitions is
+      # 14.4 + 3 x 37.8 = ~128min.
+      #
+      # An earlier revision of this pull request said 150m, off an estimate of
+      # ~78min built from ~33min fixed plus ~5min per invocation. Both halves
+      # were wrong in compensating directions: setup is less than half what I
+      # assumed, and a repetition costs ~12.6min on average rather than ~5.
+      # 150m against a 128min run is 1.17x, which one slow gpu case erases.
+      #
+      # That estimate also guessed this would prove pessimistic because
+      # gke-labs/kube-agents#951 stopped gpu-stress-test-diagnosis creating its
+      # own cluster per invocation. It did not: that case is still the most
+      # expensive of the three, and its cost is agent time, not provisioning.
+      #
+      # Remaining caveat, and it is the real one: 128min is a SINGLE sample,
+      # and agent latency is both the dominant term and the most variable.
+      # Revisit once a few runs at three repetitions exist -- in either
+      # direction.
+      timeout: 240m
       grace_period: 5m
     spec:
       serviceAccountName: prowjob-default-sa
